@@ -1,0 +1,308 @@
+#!/usr/bin/perl -w
+
+BEGIN {
+  use Cwd 'abs_path';
+  use File::Basename;
+  push @INC,dirname(abs_path($0));
+}
+use strict;
+
+use Term::ANSIColor;
+use Term::Screen;
+#use Term::ReadKey;
+use TakTuk::Pilot;
+
+use Sys::Hostname;
+my $hostname = hostname;
+
+my $node_length = 30;
+my $bar_width = 40;
+my $bar_unit = 100 / $bar_width;
+
+my $scr = new Term::Screen;
+unless ($scr) { die " Something's wrong \n"; }
+$scr->clrscr();
+    
+#ReadMode 4;
+
+my $home = $ENV{ HOME };
+my $root = "$home/.oartop";
+mkdir $root;
+unlink glob("$root/*");
+
+# up file says to distant perl processes when to stop
+open (UP, '>', "$root/up") or die $!;
+print UP '1:0:0';
+close UP;
+
+# Make a list of the nodes
+open (NODES, '<', $ENV{ OAR_NODEFILE }) or die $!;
+my @file = <NODES>;
+close NODES;
+# mimic bash uniq for node list
+my @long_nodes = keys %{{ map { $_ => 1 } @file }};
+
+# remove newline at each string
+chomp(@long_nodes);
+#@long_nodes = sort(@long_nodes);
+@long_nodes = sort {
+  (split /-|\./, $a)[1] <=>
+  (split /-|\./, $b)[1]
+} @long_nodes;
+
+
+
+# We process the short version of node names (without .city.grid5000.fr)
+my @short_nodes = ();
+my $max_long_node_length = 0;
+my $max_short_node_length = 0;
+foreach my $node ( @long_nodes ) {
+  my ($short_node) = split(/\./, $node);
+  push (@short_nodes, $short_node );
+  if ( length ($node) > $max_long_node_length ) { $max_long_node_length = length ($node); }
+  if ( length ($short_node) > $max_short_node_length ) { $max_short_node_length = length ($short_node); }
+}
+$max_long_node_length++;
+$max_short_node_length++;
+
+# state of node name, short or long
+my $node_state = "s";
+$node_length = $max_short_node_length;
+# nodes uses reference of @short_nodes or @long_nodes
+my @nodes = @{\@short_nodes};
+# number of nodes
+my $nb_nodes = @long_nodes;
+
+# Old way to launch distant processes
+#open (MACHINES, '>', "$root/machines") or die $!;
+#print MACHINES join("\n", @long_nodes);
+#close MACHINES;
+#$taktuk->run(command=>"taktuk -c \"oarsh\" -f ~/.oartop/machines");
+#$taktuk->send_command("broadcast exec [ ~/oartop/load.pl ]");
+#system ("taktuk -c \"oarsh\" -f ~/.oartop/machines broadcast exec [ ~/oartop/load.pl ] > /dev/null &");
+
+# Launch of the distant process looking if /proc/stat on everay node
+# We use TakTuk, a easy way to broadcast an execution
+my $taktuk = TakTuk::Pilot->new();
+$taktuk->run(command=>"taktuk -c \"oarsh\"  -m ".join(" -m ", @nodes)." broadcast exec [ ~/oartop/load.pl ] > /dev/null &");
+
+my $key;
+my @freqs = (1, 5, 10);
+my $freqs_i = 0;
+my $displ_mem = 0;
+my $displ_net = 0;
+my $header_node = "Nodes";
+my $header_cpu = "CPU";
+my $header_mem = "Mem";
+
+# Do not print pressed keys
+$scr->noecho();
+
+OUT: while ( 1 ) {
+  while ( $scr->key_pressed() ) {
+    $key = $scr->getch();
+    if ( defined $key ) {
+      # quit
+      if ( $key eq "q" ) {
+        print "Exit!\n";
+        last OUT;
+      }
+      # display short node names
+      elsif ( $key eq "s" ) {
+        $node_state = "s";
+        $node_length = $max_short_node_length;
+        @nodes = @{\@short_nodes};
+      }
+      # display long node names
+      elsif ( $key eq "l" ) {
+        $node_state = "l";
+        $node_length = $max_long_node_length;
+        @nodes = @{\@long_nodes};
+      }
+      # adapt frequency of tracing
+      elsif ( $key eq "f" ) {
+#        $scr->at($nb_nodes+1,0)->puts("Enter frequency (secs): ");
+#        $scr->echo();
+#        my $input = "";
+#        my $tmp;
+#        while ( ($tmp = $scr->getch()) ne "") {
+#          $input = $input.$tmp;
+#        }
+        $freqs_i = ($freqs_i + 1) % (@freqs);
+        open (UP, '>', "$root/up") or die $!;
+        print UP "$freqs[$freqs_i]:$displ_mem:$displ_net";
+        close UP;
+      }
+      elsif ( $key eq "m" ) {
+        $displ_mem = !$displ_mem;
+        open (UP, '>', "$root/up") or die $!;
+        print UP "$freqs[$freqs_i]:$displ_mem:$displ_net";
+        close UP;
+      }
+      elsif ( $key eq "n" ) {
+        $displ_net = !$displ_net;
+        open (UP, '>', "$root/up") or die $!;
+        print UP "$freqs[$freqs_i]:$displ_mem:$displ_net";
+        close UP;
+      }
+      # display help
+      elsif ( $key eq "h" ) {
+        help();
+      }
+      else {
+      }
+    }
+  }
+# ugly method to unblock nfs 
+# withtout this method, sometimes files exist but oar_top do not find them.
+  system("cat $root/* &> /dev/null");
+  my $nb_line = 0;
+  my $num_node = 0;
+  my $cur_col = 0;
+
+  $scr->at($nb_line, $node_length / 2 - length($header_node) / 2)->puts($header_node);
+  $cur_col += $node_length;
+  $scr->at($nb_line, $cur_col + $bar_width / 2 - length($header_cpu) / 2)->puts($header_cpu);
+  if ( $displ_mem ) {
+    $cur_col+=$bar_width + 6;
+    $scr->at($nb_line, $cur_col + $bar_width / 2 - length($header_mem) / 2)->puts($header_mem);
+  }
+  $nb_line++;
+
+
+  foreach my $node (@nodes) {
+    my $open = 1;
+    my $filename = $long_nodes[$num_node];
+    
+    open (TOP, "<$root/$filename") or $open = 0 ;#or warn $!;
+    if ($open) {
+      my ($user, $system) = split(/:/, <TOP>);
+      $cur_col = 0;
+      if ( $long_nodes[$num_node] eq $hostname ) {
+        print color 'bold';
+      }
+      $scr->at($nb_line,$cur_col)->clreol()->puts("$node");
+      print color 'reset';
+      my $bar_user = "|" x ($user / $bar_unit);
+      my $bar_system = "|" x ($system / $bar_unit);
+      $cur_col+=$node_length;
+      $scr->at($nb_line, $cur_col)->puts("[ ");
+      print color 'bold';
+      print color 'red';
+      $scr->puts($bar_system);
+      print color 'green';
+      $scr->puts($bar_user);
+      print color 'reset';
+      $cur_col+=$bar_width + 1;
+      $scr->at($nb_line, $cur_col)->puts(" ]");
+      if ( $displ_mem ) {
+        my ($total, $free, $buffer, $cache) = split(/:/, <TOP>);
+        my $used;
+        $scr->puts(" [ ");
+        $cur_col+=5;
+        if ( !defined $total ) {
+          $total = 1;
+        }
+        if ( defined $free ) {
+          $used = ($total - $free) / $total * 100;
+          $buffer = $buffer / $total * 100;
+          $cache = $cache / $total * 100;
+        } else {
+          $used = 0;
+          $buffer = 0;
+          $cache = 0;
+        }
+        print color 'green';
+        $scr->puts("|" x ($used / $bar_unit));
+        print color 'blue';
+        $scr->puts("|" x ($buffer / $bar_unit));
+        print color 'yellow';
+        $scr->puts("|" x ($cache / $bar_unit));
+        $cur_col+=$bar_width + 1;
+        print color 'reset';
+        $scr->at($nb_line, $cur_col)->puts("]");
+      }
+      if ($displ_net) {
+        $nb_line++;
+        $scr->at($nb_line,$cur_col)->clreol();
+        my $net_col = 0;
+        while ( my $tmp_net = <TOP> ) {
+          my ($interface, $down, $up) = split(/ /, $tmp_net);
+          if (defined $up) {
+            chomp($interface, $down, $up);
+            $down = sprintf("%6d", $down/1000);
+            $up = sprintf("%6d", $up/1000);
+            $scr->at($nb_line,$net_col)->puts(" $interface D: $down Ko/s U: $up Ko/s ");
+          }
+          $net_col += 40;
+        }
+      }
+      close TOP;
+    }
+    else {
+#      $scr->at($nb_line,0)->clreol()->puts("Problem with $root/$node: $!");
+      $scr->at($nb_line,0)->clreol()->puts("Lodaing $root/$node");
+    }
+    $num_node++;
+    $nb_line++;
+  }
+  $scr->at($nb_line++,0)->puts("Refresh rate (secs): ".$freqs[$freqs_i]);
+  $scr->at($nb_line,0)->puts("h: help | q: quit");
+#  $scr->at(-1,-1);
+
+
+
+#  $scr->at($nb_line+1,0);
+  $scr->clreos();
+  sleep 1;
+
+}
+
+$scr->clrscr();
+open (UP, '>', "$root/up") or die $!;
+print UP '0';
+close UP;
+#ReadMode 0; # Reset tty mode before exiting
+
+
+sub help() {
+  $scr->clrscr();
+  use Term::ANSIColor qw(:constants);
+  {
+    my $line = 0;
+    local $Term::ANSIColor::AUTORESET = 1;
+    $scr->at($line++,0);
+    print BOLD, CYAN " oartop V 0.1 - (C) 2010 Jerome Reybert";
+    $scr->at($line++,0);
+    print BOLD, CYAN " Released under not decided yet.";
+    $line++;
+    $scr->at($line++,0);
+    print "CPU usage on node: "; print BOLD "["; print RED " system"; print "/"; print GREEN "user"; print "              % use "; print BOLD "]";
+    $scr->at($line++,0);
+    print "Memory usage     : "; print "["; print GREEN " normal"; print "/"; print BLUE "buffer"; print "/"; print YELLOW "cache"; print "      % use "; print "]";
+    $line++;
+    $scr->at($line++,0);
+    print CYAN "h"; print ": display this help";
+    $scr->at($line++,0);
+    print CYAN "q"; print ": quit oartop";
+    $scr->at($line++,0);
+    print CYAN "f"; print ": toggle frequency 1/5/10 seconds";
+    $scr->at($line++,0);
+    print CYAN "m"; print ": toggle memory usage display";
+    $scr->at($line++,0);
+    print CYAN "n"; print ": toggle network usage display";
+    $scr->at($line++,0);
+    print CYAN "s/l"; print ": toggle short/long node name display";
+    $scr->at($line++,0);
+    print CYAN "o"; print ": trace usage timeline in output file";
+    $scr->at($line++,0);
+    print CYAN "Press any key to return.";
+    $scr->at($line++,0);
+  }
+  while ( !$scr->key_pressed() ) {
+    sleep 1;
+  }
+  $scr->at(0,0)->clreol();
+  $scr->getch();
+    
+}

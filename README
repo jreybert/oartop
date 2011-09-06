@@ -1,0 +1,12 @@
+During the development stage of a shared memory parallel program , I highly use htop to check how my program behaves during its execution. I want to see if cores are used as excepected, how memory is used... '''htop is my first profiling tool'''. I wanted the same tool to check my MPI development process, and did not find any. I made this scipt, oartop, highly based on oar (and NFS :( )
+
+What oartop does:
+* create a forlder in your home: <code class="file">~/.oartop</code>
+* make a list of your reserved machines with the environment variable <code>$OAR_NODEFILE</code>
+* using TakTuk, launch on these machines a script <code>load.pl</code>
+** <code>load.pl</code> reads system files: /proc/stat /proc/meminfo /proc/net/dev
+** and writes each seconds relevant information in <code class="file">~/.oartop/$node_name</code>
+* oartop reads these files, and display them like htop
+
+This script is using the NFS home folder, as each node can share system information writing in this shared folder. This is not the most efficient way, but it is the easier. The drawback of this is you can only use oartop for mono-frontend reservation.
+
