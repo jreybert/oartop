@@ -6,6 +6,7 @@ BEGIN {
   push @INC,dirname(abs_path($0));
 }
 use strict;
+#use diagnostics;
 
 use Term::ANSIColor;
 use Term::Screen;
@@ -14,6 +15,11 @@ use TakTuk::Pilot;
 
 use Sys::Hostname;
 my $hostname = hostname;
+sub help();
+
+if ( !defined $ENV{ OAR_NODEFILE } ) {
+  die "Error: you are not in an oar reservation, \$OAR_NODEFILE is not defined\n";
+}
 
 my $node_length = 30;
 my $bar_width = 40;
