@@ -305,10 +305,6 @@ sub help() {
     print CYAN "Press any key to return.";
     $scr->at($line++,0);
   }
-  while ( !$scr->key_pressed() ) {
-    sleep 1;
-  }
-  $scr->at(0,0)->clreol();
   $scr->getch();
-    
+  $scr->at(0,0)->clreol();  
 }
