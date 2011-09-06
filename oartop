@@ -127,13 +127,6 @@ OUT: while ( 1 ) {
       }
       # adapt frequency of tracing
       elsif ( $key eq "f" ) {
-#        $scr->at($nb_nodes+1,0)->puts("Enter frequency (secs): ");
-#        $scr->echo();
-#        my $input = "";
-#        my $tmp;
-#        while ( ($tmp = $scr->getch()) ne "") {
-#          $input = $input.$tmp;
-#        }
         $freqs_i = ($freqs_i + 1) % (@freqs);
         open (UP, '>', "$root/up") or die $!;
         print UP "$freqs[$freqs_i]:$displ_mem:$displ_net";
@@ -165,6 +158,8 @@ OUT: while ( 1 ) {
   my $nb_line = 0;
   my $num_node = 0;
   my $cur_col = 0;
+
+  $scr->clreos();
 
   $scr->at($nb_line, $node_length / 2 - length($header_node) / 2)->puts($header_node);
   $cur_col += $node_length;
@@ -254,17 +249,13 @@ OUT: while ( 1 ) {
   }
   $scr->at($nb_line++,0)->puts("Refresh rate (secs): ".$freqs[$freqs_i]);
   $scr->at($nb_line,0)->puts("h: help | q: quit");
-#  $scr->at(-1,-1);
 
-
-
-#  $scr->at($nb_line+1,0);
-  $scr->clreos();
   sleep 1;
-
 }
 
 $scr->clrscr();
+
+# Tell to all the load.pl processes to finish
 open (UP, '>', "$root/up") or die $!;
 print UP '0';
 close UP;
